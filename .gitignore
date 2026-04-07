@@ -1,0 +1,11 @@
+train/
+test/
+valid/
+runs/
+mlruns/
+mlflow.db
+*.pt
+*.npy
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
