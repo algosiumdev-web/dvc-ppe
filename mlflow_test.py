@@ -1,81 +1,151 @@
-from ultralytics import YOLO
+from rfdetr import RFDETRBase
 import mlflow
 import os
+import json
 
-# ✅ Setup MLflow
-# os.makedirs("/home/algosium/mlruns", exist_ok=True)
-mlflow.set_tracking_uri("sqlite:///mlflow.db")
-mlflow.set_experiment("ppe_yolo_training22")
+# =========================
+# ✅ MLflow Setup
+# =========================
+# mlflow.set_tracking_uri("sqlite:///mlflow.db")
+mlflow.set_tracking_uri("sqlite:////home/algosium/mlflow_server/mlflow.db")
+mlflow.set_experiment("ppe_rfdetr_experiment")
+
+# =========================
+# ✅ PATHS (IMPORTANT)
+# =========================
+output_dir = "runs/rfdetr_PPE-MAIN-1"
+
+results_json_path = os.path.join(output_dir, "results.json")
+log_file_path = os.path.join(output_dir, "log.txt")
+plot_path = os.path.join(output_dir, "metrics_plot.png")
+
+best_model_path = os.path.join(output_dir, "checkpoint_best_ema.pth")
+
+# =========================
+# ✅ START RUN
+# =========================
+with mlflow.start_run(run_name="rfdetr_ppe_main1"):
+
+    print("✅ MLflow run started (OFFLINE LOGGING)")
+
+    # =========================
+    # ✅ TAGS (for comparison)
+    # =========================
+    mlflow.set_tags({
+        "model": "rfdetr",
+        "type": "detection",
+        # "dataset": "ppe",
+        "dataset": "ppe_v1",
+        "dvc_remote": "myremote",
+        "mode": "offline_logging"
+    })
+
+    # ✅ ADD THIS HERE
+    mlflow.set_tag("data_version", "v1_PPE_MERGED_DATASET_V1.0")  
 
 
-# ✅ Callback for epoch-wise logging
-def on_epoch_end(trainer):
-    metrics = trainer.metrics
 
-    if metrics:
-        for k, v in metrics.items():
-            if isinstance(v, (int, float)):
-                
-                # ✅ FIX: clean metric name
-                clean_key = k.replace("(", "").replace(")", "").replace(" ", "_")
+    # =========================
+    # ✅ PARAMS
+    # =========================
+    mlflow.log_params({
+        "epochs": 150,
+        "batch_size": 8,
+        "grad_accum_steps": 2,
+        "lr": 2e-4,
+        "model": "RF-DETR Base"
+    })
 
-                mlflow.log_metric(clean_key, float(v), step=trainer.epoch)
+    # =========================
+    # ✅ LOAD RESULTS.JSON
+    # =========================
+    data = None
 
-    print(f"📊 Logged epoch {trainer.epoch}")
+    if os.path.exists(results_json_path):
+        with open(results_json_path, "r") as f:
+            data = json.load(f)
+        print("✅ results.json loaded")
+    else:
+        print("❌ results.json NOT FOUND")
 
+    # =========================
+    # ✅ LOG FINAL METRICS
+    # =========================
+    if data:
+        try:
+            mlflow.log_metric("mAP", data["map"])
+            mlflow.log_metric("precision", data["precision"])
+            mlflow.log_metric("recall", data["recall"])
+            mlflow.log_metric("f1_score", data["f1_score"])
 
+            print("✅ Final metrics logged")
+        except Exception as e:
+            print("⚠️ Error logging final metrics:", e)
 
-# Load model
-model = YOLO("yolo11n.pt")
+        # =========================
+        # ✅ CLASS-WISE METRICS
+        # =========================
+        try:
+            if "class_map" in data and "valid" in data["class_map"]:
+                class_data = data["class_map"]["valid"]
 
+                for cls in class_data:
+                    name = cls["class"].replace(" ", "_")
 
-# ✅ ADD CALLBACK HERE
-model.add_callback("on_fit_epoch_end", on_epoch_end)
+                    mlflow.log_metric(f"{name}_map50", cls["map@50"])
+                    mlflow.log_metric(f"{name}_precision", cls["precision"])
+                    mlflow.log_metric(f"{name}_recall", cls["recall"])
 
-with mlflow.start_run(run_name="test55"):
+                print("✅ Class-wise metrics logged")
+        except Exception as e:
+            print("⚠️ Error logging class-wise metrics:", e)
 
-    # ✅ Log params (safe now)
-    params = {
-        "epochs": 25,
-        "batch": 16,
-        "imgsz": 768,
-        "optimizer": "auto",
-        "cos_lr": True,
-        "mosaic": 0.6,
-        "device": 0
-    }
-    mlflow.log_params(params)
+    # =========================
+    # ✅ EPOCH-WISE METRICS (log.txt)
+    # =========================
+    if os.path.exists(log_file_path):
+        print("✅ Logging epoch-wise metrics...")
 
-    print("✅ MLflow run started")
+        with open(log_file_path, "r") as f:
+            for step, line in enumerate(f):
+                try:
+                    log = json.loads(line)
 
-    # ✅ Train
-    results = model.train(
-        data="data.yaml",
-        epochs=25,
-        batch=16,
-        imgsz=768,
-        device=0,
-        name="test55",
-        project="runs",
-        cos_lr=True,
-        mosaic=0.6,
-        optimizer="auto"
-    )
+                    if "train_loss" in log:
+                        mlflow.log_metric("train_loss", log["train_loss"], step=step)
 
-    # ✅ Log metrics (after training)
-    if hasattr(results, "results_dict"):
-        for k, v in results.results_dict.items():
-            if isinstance(v, (int, float)):
-                
-                clean_key = k.replace("(", "").replace(")", "").replace(" ", "_")
-                
-                mlflow.log_metric(clean_key, float(v))
+                    if "test_loss" in log:
+                        mlflow.log_metric("val_loss", log["test_loss"], step=step)
 
-    # ✅ Log artifacts
-    save_dir = str(results.save_dir)
-    mlflow.log_artifacts(save_dir)
+                    if "ema_test_loss" in log:
+                        mlflow.log_metric("ema_val_loss", log["ema_test_loss"], step=step)
 
-    # ✅ Log best model
-    best_model_path = os.path.join(save_dir, "weights/best.pt")
+                except:
+                    continue
+
+        print("✅ Epoch-wise metrics logged")
+    else:
+        print("❌ log.txt NOT FOUND")
+
+    # =========================
+    # ✅ LOG FULL OUTPUT FOLDER
+    # =========================
+    if os.path.exists(output_dir):
+        mlflow.log_artifacts(output_dir)
+        print("✅ Full artifacts logged")
+
+    # =========================
+    # ✅ LOG PLOT IMAGE
+    # =========================
+    if os.path.exists(plot_path):
+        mlflow.log_artifact(plot_path, artifact_path="plots")
+        print("✅ Plot logged")
+
+    # =========================
+    # ✅ LOG MODEL
+    # =========================
     if os.path.exists(best_model_path):
-        mlflow.log_artifact(best_model_path)
+        mlflow.log_artifact(best_model_path, artifact_path="model")
+        print("✅ Model logged")
+
+    print("🚀 ALL DATA SUCCESSFULLY UPLOADED TO MLFLOW")

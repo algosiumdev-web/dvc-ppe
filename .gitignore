@@ -16,4 +16,4 @@ coco_dataset
 /valid
 /test
 *.pth
-rf-detr-base.pth
+rf-detr-base.pth*.pth

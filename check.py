@@ -4,7 +4,7 @@ from rfdetr import RFDETRBase
 from collections import Counter
 
 model = RFDETRBase(
-    pretrain_weights="runs/rfdetr_hardhat/checkpoint_best_ema.pth"
+    pretrain_weights="/home/algosium/Downloads/main1ppe/runs/rfdetr_PPE-MAIN-1/checkpoint_best_ema.pth"
 )
 
 model.optimize_for_inference(batch_size=1)
@@ -31,7 +31,7 @@ while True:
 
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-    detections = model.predict(rgb, threshold=0.3)
+    detections = model.predict(rgb, threshold=0.4)
 
     print(f"\n========== Frame {frame_count} ==========")
 
