@@ -1,0 +1,5 @@
+outs:
+- md5: b4d3ce46099eaed50626ede388caf979
+  size: 372578043
+  hash: md5
+  path: rf-detr-base.pth
